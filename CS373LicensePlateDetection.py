@@ -1,7 +1,6 @@
 import math
 import sys
 from pathlib import Path
-from cv2 import connectedComponents, threshold
 
 from matplotlib import pyplot
 from matplotlib.patches import Rectangle
@@ -223,6 +222,41 @@ def computeConnectedComponentLabeling(pixel_array, image_width, image_height):
     
     return pixel_array, labels
 
+def computeBoundaryBoxBounds(image_width, image_height, connectedComponents_array, largestComponentLabel):
+    bbox_min_x = image_width
+    bbox_max_x = 0
+    bbox_min_y = image_height
+    bbox_max_y = 0
+    for x in range(image_width):
+        for y in range(image_height):
+            if(connectedComponents_array[y][x]==largestComponentLabel):
+                bbox_min_x = min(bbox_min_x,x)
+                bbox_max_x = max(bbox_max_x,x)
+                bbox_min_y = min(bbox_min_y,y)
+                bbox_max_y = max(bbox_max_y,y)
+    return bbox_min_x,bbox_max_x,bbox_min_y,bbox_max_y
+
+# find largest component in connectedComponents_labels and set it to 1
+def extractLargestLabel(connectedComponents_labels):
+    largestComponentLabel = -1
+    largestElement = 0
+    for i in range(len(connectedComponents_labels)):
+        if(connectedComponents_labels[i]>largestElement):
+            largestElement = connectedComponents_labels[i]
+            largestComponentLabel = i
+    connectedComponents_labels[largestComponentLabel] = 1
+    return largestComponentLabel
+
+# Check box ratio
+def boxHasExpectedRatio(min_x, max_x, min_y, max_y):
+    xSize = max_x - min_x
+    ySize = max_y - min_y
+    ratio = xSize/ySize
+    if(2<=ratio and ratio<=5):
+        return True
+    else:
+        return False
+
 # This is our code skeleton that performs the license plate detection.
 # Feel free to try it on your own images of cars, but keep in mind that with our algorithm developed in this lecture,
 # we won't detect arbitrary or difficult to detect license plates!
@@ -271,32 +305,28 @@ def main():
     px_array = scaleTo0And255AndQuantize(px_array, image_width, image_height)
     thresholdValue = 150
     px_array = computeThresholdGE(px_array, thresholdValue, image_width, image_height)
-    for x in range(3):
+    # dilation and erosion computed 4 times
+    for x in range(4):
         px_array = computeDilation8Nbh3x3FlatSE(px_array, image_width, image_height)
-    for x in range(2):
+    for x in range(4):
         px_array = computeErosion8Nbh3x3FlatSE(px_array, image_width, image_height)
 
     connectedComponents_array, connectedComponents_labels = computeConnectedComponentLabeling(px_array, image_width, image_height)
 
-    largestComponentLabel = -1
-    largestElement = 0
-    for i in range(len(connectedComponents_labels)):
-        if(connectedComponents_labels[i]>largestElement):
-            largestElement = connectedComponents_labels[i]
-            largestComponentLabel = i
 
-    # compute a bounding box
-    bbox_min_x = image_width
-    bbox_max_x = 0
-    bbox_min_y = image_height
-    bbox_max_y = 0
-    for x in range(image_width):
-        for y in range(image_height):
-            if(connectedComponents_array[y][x]==largestComponentLabel):
-                bbox_min_x = min(bbox_min_x,x)
-                bbox_max_x = max(bbox_max_x,x)
-                bbox_min_y = min(bbox_min_y,y)
-                bbox_max_y = max(bbox_max_y,y)
+    # Find label with largest size and compute a bounding box
+    largestComponentLabel = extractLargestLabel(connectedComponents_labels)
+    bbox_min_x, bbox_max_x, bbox_min_y, bbox_max_y = computeBoundaryBoxBounds(image_width, image_height, connectedComponents_array, largestComponentLabel)
+    
+    if not (boxHasExpectedRatio(bbox_min_x, bbox_max_x, bbox_min_y, bbox_max_y)):
+        for i in range(3):
+            tempLabel = extractLargestLabel(connectedComponents_labels)
+            min_x, max_x, min_y, max_y = computeBoundaryBoxBounds(image_width, image_height, connectedComponents_array, tempLabel)
+            if(boxHasExpectedRatio(min_x, max_x, min_y, max_y)):
+                largestComponentLabel = tempLabel
+                bbox_min_x, bbox_max_x, bbox_min_y, bbox_max_y = min_x, max_x, min_y, max_y
+                break
+            
 
     px_array = computeRGBToGreyscale(px_array_r, px_array_g, px_array_b, image_width, image_height)
 
@@ -316,7 +346,6 @@ def main():
     if SHOW_DEBUG_FIGURES:
         # plot the current figure
         pyplot.show()
-
 
 if __name__ == "__main__":
     main()
