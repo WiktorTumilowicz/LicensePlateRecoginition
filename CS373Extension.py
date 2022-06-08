@@ -222,8 +222,8 @@ def computeConnectedComponentLabeling(pixel_array, image_width, image_height):
     
     return pixel_array, labels
 
-# Points in order, xmin,ymin,xmax,ymax
-def computeBoundaryBoxBounds(image_width, image_height, connectedComponents_array, largestComponentLabel):
+# Points in order, xmin,ymin,xmax,ymax for a clockwise rotation
+def computeBoundaryBoxBoundsClockwise(image_width, image_height, connectedComponents_array, largestComponentLabel):
     points = [[0 for x in range(2)] for y in range(4)]
     points[0][0] = image_width
     points[1][1] = image_height
@@ -237,6 +237,24 @@ def computeBoundaryBoxBounds(image_width, image_height, connectedComponents_arra
                 if(points[2][0]<x):
                     points[2] = [x, y]
                 if(points[3][1]<=y):
+                    points[3] = [x, y]
+    return points
+
+# Points in order, xmin,ymin,xmax,ymax for a counterclockwise rotation
+def computeBoundaryBoxBoundsCounterclockwise(image_width, image_height, connectedComponents_array, largestComponentLabel):
+    points = [[0 for x in range(2)] for y in range(4)]
+    points[0][0] = image_width
+    points[1][1] = image_height
+    for x in range(image_width):
+        for y in range(image_height):
+            if(connectedComponents_array[y][x]==largestComponentLabel):
+                if(points[0][0]>x):
+                    points[0] = [x, y]
+                if(points[1][1]>=y):
+                    points[1] = [x, y]
+                if(points[2][0]<=x):
+                    points[2] = [x, y]
+                if(points[3][1]<y):
                     points[3] = [x, y]
     return points
 
@@ -256,12 +274,12 @@ def boxHasExpectedRatio(points):
     xSize = points[2][0] - points[0][0]
     ySize = points[3][1] - points[1][1]
     ratio = xSize/ySize
-    if(1.5<=ratio and ratio<=5):
+    if(0.2<=ratio and ratio<=5):
         return True
     else:
         return False
 
-# Creates a normal bounding box using the x_min=[0][0],y-min=[1][1],x_max=[2][0],y_max=[3][1], co-ords
+# Creates a normal bounding box using the x_min=[0][0],y_min=[1][1],x_max=[2][0],y_max=[3][1], co-ords
 def makeBasicBoundaryBox(points):
     newPoints = [[0 for x in range(2)] for y in range(4)]
     newPoints[0][0]=points[0][0]
@@ -293,12 +311,20 @@ def getAngle(a,b,c):
     if angle < 0: angle += 360
     return angle
 
-# incomplete, only works for clockwise rotated plates, calculates the rotation of a number plate
+# returns rotation required to get numberplate to align with the horizontal axis
 def getRotation(points):
-    line1x = points[3][0] - points[0][0]
-    line1y = points[3][1] - points[0][1]
-    line2x = points[2][0] - points[1][0]
-    line2y = points[2][1] - points[1][1]
+    if((math.dist(points[3],points[0])+math.dist(points[1],points[2])) > (math.dist(points[1],points[0])+math.dist(points[3],points[2]))):
+        # if rotated clockwise
+        line1x = points[3][0] - points[0][0]
+        line1y = points[3][1] - points[0][1]
+        line2x = points[2][0] - points[1][0]
+        line2y = points[2][1] - points[1][1]
+    else:
+        # if rotated counterclockwise
+        line1x = points[2][0] - points[3][0]
+        line1y = points[2][1] - points[3][1]
+        line2x = points[1][0] - points[0][0]
+        line2y = points[1][1] - points[0][1]
     line1Angle = math.atan2(line1y, line1x)
     line2Angle = math.atan2(line2y, line2x)
     angle = math.degrees((line1Angle+line2Angle)/2)
@@ -364,13 +390,13 @@ def main():
 
     # Find label with largest size and compute a bounding box
     largestComponentLabel = extractLargestLabel(connectedComponents_labels)
-    boundaryPoints = computeBoundaryBoxBounds(image_width, image_height, connectedComponents_array, largestComponentLabel)
+    boundaryPoints = computeBoundaryBoxBoundsClockwise(image_width, image_height, connectedComponents_array, largestComponentLabel)
     
     #attempt to find a bounding box with correct ratio 3 times
     if not (boxHasExpectedRatio(boundaryPoints)):
         for i in range(3):
             tempLabel = extractLargestLabel(connectedComponents_labels)
-            tempPoints = computeBoundaryBoxBounds(image_width, image_height, connectedComponents_array, tempLabel)
+            tempPoints = computeBoundaryBoxBoundsClockwise(image_width, image_height, connectedComponents_array, tempLabel)
             if(boxHasExpectedRatio(tempPoints)):
                 largestComponentLabel = tempLabel
                 boundaryPoints = tempPoints
@@ -381,6 +407,11 @@ def main():
     # Compute optimal boundary box
     if(boundaryAnglesInvalid(boundaryPoints,1.08)):
         boundaryPoints = makeBasicBoundaryBox(boundaryPoints)
+    else:
+        if (getRotation(boundaryPoints) < 0):
+            boundaryPoints = computeBoundaryBoxBoundsCounterclockwise(image_width, image_height, connectedComponents_array, largestComponentLabel)
+        
+        print("The rotation of the liscense plate is: " + str(round(getRotation(boundaryPoints),1)) + " degrees")
         
 
     # Draw a bounding box as a rectangle into the input image
